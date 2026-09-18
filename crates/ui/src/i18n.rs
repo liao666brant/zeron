@@ -2290,6 +2290,10 @@ messages! {
     TranscriptSummaryCalledToolsOne = { en: "called {n} tool", zh: "已调用 {n} 个工具" },
     TranscriptSummaryCalledToolsMany = { en: "called {n} tools", zh: "已调用 {n} 个工具" },
     TranscriptSummaryFailed = { en: "{n} failed", zh: "{n} 个失败" },
+    TranscriptElapsedSeconds = { en: "{n}s", zh: "{n}秒" },
+    TranscriptElapsedMinutes = { en: "{n}m {s}s", zh: "{n}分{s}秒" },
+    TranscriptElapsedHours = { en: "{n}h {m}m", zh: "{n}小时{m}分钟" },
+    TranscriptElapsedDays = { en: "{n}d {h}h", zh: "{n}天{h}小时" },
     CountToolOne = { en: "{n} tool", zh: "{n} 个工具" },
     CountToolMany = { en: "{n} tools", zh: "{n} 个工具" },
 }

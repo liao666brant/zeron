@@ -2195,16 +2195,42 @@ pub fn sending_bridge(
 }
 
 /// Compact elapsed formatting, using at most two units up to days.
-pub fn format_elapsed(secs: i64) -> String {
+pub fn format_elapsed(secs: i64, locale: Locale) -> String {
     let secs = secs.max(0);
     if secs < 60 {
-        format!("{secs}s")
+        i18n::fill(
+            MessageId::TranscriptElapsedSeconds,
+            "{n}",
+            &secs.to_string(),
+            locale,
+        )
     } else if secs < 3_600 {
-        format!("{}m {}s", secs / 60, secs % 60)
+        i18n::fill_many(
+            MessageId::TranscriptElapsedMinutes,
+            &[
+                ("{n}", &(secs / 60).to_string()),
+                ("{s}", &(secs % 60).to_string()),
+            ],
+            locale,
+        )
     } else if secs < 86_400 {
-        format!("{}h {}m", secs / 3_600, (secs % 3_600) / 60)
+        i18n::fill_many(
+            MessageId::TranscriptElapsedHours,
+            &[
+                ("{n}", &(secs / 3_600).to_string()),
+                ("{m}", &((secs % 3_600) / 60).to_string()),
+            ],
+            locale,
+        )
     } else {
-        format!("{}d {}h", secs / 86_400, (secs % 86_400) / 3_600)
+        i18n::fill_many(
+            MessageId::TranscriptElapsedDays,
+            &[
+                ("{n}", &(secs / 86_400).to_string()),
+                ("{h}", &((secs % 86_400) / 3_600).to_string()),
+            ],
+            locale,
+        )
     }
 }
 
@@ -5996,7 +6022,7 @@ impl Transcript {
                             .relative()
                             .top(px(1.0))
                             .text_color(theme.text_faint)
-                            .child(SharedString::from(format_elapsed(elapsed_secs))),
+                            .child(SharedString::from(format_elapsed(elapsed_secs, locale))),
                     )
                 })
                 .into_any_element(),
@@ -13324,9 +13350,10 @@ mod tests {
         // The same slot is a different word per locale, never a leaked English
         // one.
         assert_ne!(flavour_word(seed, 3, Locale::ZhCn), en(3));
-        assert_eq!(format_elapsed(59), "59s");
-        assert_eq!(format_elapsed(92), "1m 32s");
-        assert_eq!(format_elapsed(-5), "0s");
+        assert_eq!(format_elapsed(59, Locale::En), "59s");
+        assert_eq!(format_elapsed(92, Locale::En), "1m 32s");
+        assert_eq!(format_elapsed(-5, Locale::En), "0s");
+        assert_eq!(format_elapsed(92, Locale::ZhCn), "1分32秒");
         assert_eq!(flavour_word(seed, 3, Locale::En), en(3));
 
         for (secs, expected) in [
@@ -13343,7 +13370,11 @@ mod tests {
             (86_400, "1d 0h"),
             (183_845, "2d 3h"),
         ] {
-            assert_eq!(format_elapsed(secs), expected, "elapsed seconds: {secs}");
+            assert_eq!(
+                format_elapsed(secs, Locale::En),
+                expected,
+                "elapsed seconds: {secs}"
+            );
         }
     }
 
