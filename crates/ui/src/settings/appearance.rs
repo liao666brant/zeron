@@ -237,6 +237,7 @@ pub struct AppearancePage {
     size_menu_dismissed_at: Option<std::time::Instant>,
     terminal_size_menu_dismissed_at: Option<std::time::Instant>,
     code_size_menu_dismissed_at: Option<std::time::Instant>,
+    language_menu: Popup<()>,
     light_theme_menu: Popup<()>,
     dark_theme_menu: Popup<()>,
     import_dialog: Option<ImportDialog>,
@@ -523,6 +524,7 @@ impl AppearancePage {
             size_menu_dismissed_at: None,
             terminal_size_menu_dismissed_at: None,
             code_size_menu_dismissed_at: None,
+            language_menu: Popup::default(),
             light_theme_menu: Popup::default(),
             dark_theme_menu: Popup::default(),
             import_dialog: None,
@@ -745,6 +747,7 @@ impl AppearancePage {
                 self.close_size_menu(kind, cx);
             }
         }
+        self.close_language_menu(cx);
     }
 
     fn close_size_menu(&mut self, kind: FontKind, cx: &mut Context<Self>) {
@@ -756,6 +759,22 @@ impl AppearancePage {
             FontKind::Terminal => popover::reap_popup(cx, |page| &mut page.terminal_size_menu),
             FontKind::Code => popover::reap_popup(cx, |page| &mut page.code_size_menu),
         }
+    }
+
+    fn close_language_menu(&mut self, cx: &mut Context<Self>) {
+        if !self.language_menu.begin_close() {
+            return;
+        }
+        popover::reap_popup(cx, |page| &mut page.language_menu);
+    }
+
+    fn toggle_language_menu(&mut self, cx: &mut Context<Self>) {
+        let was_open = self.language_menu.is_open();
+        self.close_other_menus(None, None, cx);
+        if !was_open {
+            self.language_menu.open(());
+        }
+        cx.notify();
     }
 
     fn dismiss_font_menu(&mut self, kind: FontKind, cx: &mut Context<Self>) {
@@ -1322,47 +1341,93 @@ fn mode_message(mode: AppearanceMode) -> MessageId {
     }
 }
 
-/// One interface-language pill, in the same shell as [`surface_choice`]. The
-/// label is translated; the element id stays stable across locales.
-fn language_choice(
+fn language_selector(
+    page: &mut AppearancePage,
     theme: &Theme,
-    preference: LanguagePreference,
+    current: LanguagePreference,
     locale: Locale,
-    selected: bool,
-) -> gpui::Stateful<gpui::Div> {
+    cx: &mut Context<AppearancePage>,
+) -> AnyElement {
+    let open = page.language_menu.is_open();
+    let closing = page.language_menu.closing_since();
+    let menu = popover::popover_card(theme)
+        .w(px(204.0))
+        .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+            this.close_language_menu(cx);
+            cx.notify();
+        }))
+        .flex()
+        .flex_col()
+        .gap(px(2.0))
+        .children(LanguagePreference::ALL.into_iter().map(|preference| {
+            let active = preference == current;
+            popover::menu_row(
+                theme,
+                active,
+                SharedString::from(format!("appearance-language-menu-{}", preference.id())),
+            )
+            .id(SharedString::from(format!(
+                "appearance-language-row-{}",
+                preference.id()
+            )))
+            .on_click(cx.listener(move |this, _, _, cx| {
+                i18n::set_preference(preference, cx);
+                this.close_language_menu(cx);
+                cx.notify();
+            }))
+            .child(
+                div()
+                    .flex_1()
+                    .child(i18n::preference_label(preference, locale)),
+            )
+            .when(active, |row| {
+                row.child(
+                    icons::icon(icons::CHECK)
+                        .size(px(14.0))
+                        .text_color(theme.accent),
+                )
+            })
+        }))
+        .into_any_element();
+
     div()
-        .id(SharedString::from(format!(
-            "appearance-language-{}",
-            preference.id()
-        )))
-        .h(px(30.0))
-        .px(px(10.0))
-        .rounded(px(7.0))
+        .id("appearance-language-dropdown")
+        .relative()
+        .w(px(204.0))
+        .h(px(36.0))
+        .px(px(11.0))
+        .rounded(px(9.0))
         .border_1()
-        .border_color(if selected { theme.accent } else { theme.border })
-        .bg(if selected {
-            theme.accent_wash
+        .border_color(if open {
+            theme.border_strong
         } else {
-            theme.surface_raised.opacity(0.28)
+            theme.border
         })
-        .text_size(crate::typography::ui_rems(11.5))
-        .font_weight(if selected {
-            gpui::FontWeight::MEDIUM
-        } else {
-            gpui::FontWeight::NORMAL
-        })
-        .text_color(if selected {
-            theme.accent
-        } else {
-            theme.text_muted
-        })
+        .bg(crate::theme::ink(0.025))
         .flex()
         .items_center()
+        .gap(px(8.0))
         .cursor_pointer()
-        .when(!selected, |control| {
-            control.hover(|style| style.bg(theme.surface_raised_hover))
+        .on_click(cx.listener(|this, _, _, cx| this.toggle_language_menu(cx)))
+        .child(
+            div()
+                .flex_1()
+                .child(i18n::preference_label(current, locale)),
+        )
+        .child(
+            icons::icon(icons::ALT_ARROW_DOWN)
+                .size(px(14.0))
+                .flex_none()
+                .text_color(theme.text_muted),
+        )
+        .when_some(page.language_menu.get(), |trigger, _| {
+            trigger.child(popover::anchored_menu_below(
+                "appearance-language-menu",
+                menu,
+                closing,
+            ))
         })
-        .child(i18n::preference_label(preference, locale))
+        .into_any_element()
 }
 
 fn surface_choice(
@@ -3292,16 +3357,6 @@ impl Render for AppearancePage {
                 )
             })
             .collect::<Vec<_>>();
-        let language_controls = LanguagePreference::ALL
-            .into_iter()
-            .map(|preference| {
-                language_choice(&theme, preference, locale, preference == current_language)
-                    .on_click(cx.listener(move |_, _, _, cx| {
-                        i18n::set_preference(preference, cx);
-                        cx.notify();
-                    }))
-            })
-            .collect::<Vec<_>>();
         let mut settings_rows = theme_rows;
         settings_rows.push(
             widgets::card_row(&theme, false)
@@ -3736,15 +3791,15 @@ impl Render for AppearancePage {
                                                     ],
                                                 )),
                                         )
-                                        .child(
-                                            div()
-                                                .flex_none()
-                                                .ml(px(10.0))
-                                                .flex()
-                                                .items_center()
-                                                .gap(px(6.0))
-                                                .children(language_controls),
-                                        ),
+                                        .child(div().flex_none().ml(px(10.0)).child(
+                                            language_selector(
+                                                self,
+                                                &theme,
+                                                current_language,
+                                                locale,
+                                                cx,
+                                            ),
+                                        )),
                                 ),
                             )
                             .child(font_section)
