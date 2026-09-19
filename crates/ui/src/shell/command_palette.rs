@@ -344,6 +344,8 @@ impl Shell {
                     state.display_status_for(chat, Utc::now()),
                     ix == active,
                     chat.archived,
+                    false,
+                    None,
                     None,
                     Some(&query),
                     &theme,

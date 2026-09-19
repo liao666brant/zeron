@@ -443,6 +443,9 @@ messages! {
     // Settings → Devices. `{time}` takes a [`relative_ago`] result.
     DevicesLastSeen = { en: "Last seen {time}", zh: "上次在线 {time}" },
     DevicesAdded = { en: "Added {time}", zh: "添加于 {time}" },
+    // "Cursor SDK" is the product name; only the unknown-version stand-in moves.
+    DevicesCursorSdk = { en: "Cursor SDK {version}", zh: "Cursor SDK {version}" },
+    DevicesVersionUnknown = { en: "unknown (older engine)", zh: "未知（引擎版本较旧）" },
 
     // Composer. `{source}` takes a window title / app name; `{e}` and `{err}`
     // an engine payload; both stay untranslated.
@@ -549,7 +552,9 @@ messages! {
     SidebarViewOrganize = { en: "Organize", zh: "组织" },
     SidebarViewSort = { en: "Sort", zh: "排序" },
     SidebarViewShow = { en: "Show", zh: "显示" },
+    SidebarViewLayout = { en: "Layout", zh: "布局" },
     SidebarViewByDevice = { en: "By device", zh: "按设备" },
+    SidebarViewByProject = { en: "By project", zh: "按项目" },
     SidebarViewInOneList = { en: "In one list", zh: "合并为一个列表" },
     SidebarViewLastUpdated = { en: "Last updated", zh: "最近更新" },
     SidebarViewCreated = { en: "Created", zh: "创建时间" },
@@ -566,13 +571,49 @@ messages! {
     ChangeRequestStateClosed = { en: "Closed", zh: "已关闭" },
     // Zeron's term for a coding-agent runtime; kept as written.
     SidebarViewHarness = { en: "Harness", zh: "Harness" },
+    SidebarViewProjectIcon = { en: "Project icon", zh: "项目图标" },
+    SidebarViewLocation = { en: "Location", zh: "位置" },
+    SidebarViewCompactMode = { en: "Compact mode", zh: "紧凑模式" },
     SpacesAllProjects = { en: "All projects", zh: "所有项目" },
     SpacesNewProject = { en: "New project…", zh: "新建项目…" },
     SpacesSearchProjects = { en: "Search projects…", zh: "搜索项目…" },
     SidebarArchived = { en: "Archived", zh: "已归档" },
     SidebarArchivedCount = { en: "Archived ({n})", zh: "已归档（{n}）" },
+    SidebarPinned = { en: "Pinned", zh: "已固定" },
+    SidebarPinnedCount = { en: "Pinned ({n})", zh: "已固定（{n}）" },
+    SidebarSessions = { en: "Sessions", zh: "会话" },
+    SidebarSessionsCount = { en: "Sessions ({n})", zh: "会话（{n}）" },
     SidebarGroupCount = { en: "{group} ({n})", zh: "{group}（{n}）" },
     SidebarShowMore = { en: "Show {n} more", zh: "再显示 {n} 个" },
+    SidebarDropToUnpin = { en: "Drop here to unpin", zh: "拖到此处取消固定" },
+
+    // Shell → sidebar pin writes (sidebar_pins.rs, spaces.rs, shell.rs).
+    SidebarPinsStillSyncing = { en: "Pins are still syncing", zh: "固定项仍在同步" },
+    SidebarPinsNotConfirmed = {
+        en: "The engine did not confirm the saved pins",
+        zh: "引擎未确认已保存的固定项"
+    },
+    SidebarPinsEngineOffline = {
+        en: "Engine not connected. Pins were not changed.",
+        zh: "引擎未连接，固定项没有改变。"
+    },
+    SidebarPinsAwaitingConfirmation = {
+        en: "Waiting for the engine to confirm the previous pin change.",
+        zh: "正在等待引擎确认上一次固定项更改。"
+    },
+    SidebarPinsSaveFailed = { en: "Couldn't save pins: {error}", zh: "无法保存固定项：{error}" },
+    SidebarPinsUnconfirmed = {
+        en: "Couldn't confirm pins. Queued edits were cancelled; waiting for the engine before allowing more pin changes.",
+        zh: "无法确认固定项，已取消排队中的更改；在引擎确认之前不再接受新的固定项更改。"
+    },
+    SidebarPinsLimit = {
+        en: "You can pin up to 200 sessions",
+        zh: "最多可固定 200 个会话"
+    },
+    SidebarPinsInvalid = {
+        en: "Sidebar pins must be non-empty and unique",
+        zh: "侧边栏固定项必须非空且不重复"
+    },
 
     // Shell → Add-space palette (spaces.rs).
     AddSpaceSearchDevices = { en: "Search devices…", zh: "搜索设备…" },
@@ -671,7 +712,16 @@ messages! {
     ChatStatusWorking = { en: "Working", zh: "进行中" },
     ChatStatusInput = { en: "Input", zh: "等待输入" },
     ChatStatusDone = { en: "Done", zh: "完成" },
+    // The word behind an idle row's status corner, which shows the elapsed
+    // time instead; it reaches the accessibility tree and nothing else.
+    ChatStatusIdle = { en: "Idle", zh: "空闲" },
     ChatActionArchive = { en: "Archive", zh: "归档" },
+    ChatActionPin = { en: "Pin", zh: "固定" },
+    ChatActionUnpin = { en: "Unpin", zh: "取消固定" },
+    // A compact row's corner is its remote mark or its actions menu, so the
+    // accessibility label names the slot rather than a status.
+    ChatCornerRemoteSession = { en: "Remote session", zh: "远程会话" },
+    ChatCornerSessionActions = { en: "Session actions", zh: "会话操作" },
     ConnectionOffline = { en: "Offline — sends are saved", zh: "离线 — 消息会先保存在本机" },
     ConnectionReconnecting = { en: "Reconnecting…", zh: "正在重新连接…" },
 
@@ -686,6 +736,10 @@ messages! {
     SidebarAlphaBuild = { en: "Alpha", zh: "Alpha 版" },
     SidebarAuthDisabled = { en: "Authentication disabled", zh: "已禁用身份认证" },
     SidebarNotSignedIn = { en: "Not signed in", zh: "未登录" },
+
+    // Shell → project badge tooltip (project_icon.rs). A session with no space
+    // has no project name, so the badge's hover card names the home directory.
+    ProjectIconHome = { en: "Home", zh: "主目录" },
 
     // Shell → update strip. `{version}` takes the release, `{message}` a payload.
     UpdateAvailable = { en: "Update available — v{version}", zh: "有可用更新 — v{version}" },
@@ -2708,6 +2762,28 @@ mod tests {
         assert_eq!(count_commits(4, Locale::En), "4 commits");
         assert_eq!(count_commits(1, Locale::ZhCn), "1 个提交");
         assert_eq!(count_commits(4, Locale::ZhCn), "4 个提交");
+    }
+
+    /// The pin rejections `crates/proto` classifies keep that crate's wording in
+    /// English and name the same rejection in Chinese.
+    #[test]
+    fn pin_rejections_render_proto_english_and_chinese() {
+        let rows = [
+            (
+                zeron_proto::SidebarPinRejection::NotUnique,
+                MessageId::SidebarPinsInvalid,
+                "侧边栏固定项必须非空且不重复",
+            ),
+            (
+                zeron_proto::SidebarPinRejection::Limit,
+                MessageId::SidebarPinsLimit,
+                "最多可固定 200 个会话",
+            ),
+        ];
+        for (rejection, id, chinese) in rows {
+            assert_eq!(translate(id, Locale::En), rejection.english());
+            assert_eq!(translate(id, Locale::ZhCn), chinese);
+        }
     }
 
     #[test]
