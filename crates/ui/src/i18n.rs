@@ -434,6 +434,7 @@ messages! {
     CommonDone = { en: "Done", zh: "完成" },
     CommonRemove = { en: "Remove", zh: "移除" },
     CommonEdit = { en: "Edit", zh: "编辑" },
+    CommonSave = { en: "Save", zh: "保存" },
     // Shared by the shortcut recorder and the Appshots page.
     CommonPressEscapeToCancel = { en: "Press Escape to cancel.", zh: "按 Escape 键取消。" },
 
@@ -555,7 +556,7 @@ messages! {
     SidebarViewLayout = { en: "Layout", zh: "布局" },
     SidebarViewByDevice = { en: "By device", zh: "按设备" },
     SidebarViewByProject = { en: "By project", zh: "按项目" },
-    SidebarViewInOneList = { en: "In one list", zh: "合并为一个列表" },
+    SidebarViewInOneList = { en: "None", zh: "无" },
     SidebarViewLastUpdated = { en: "Last updated", zh: "最近更新" },
     SidebarViewCreated = { en: "Created", zh: "创建时间" },
     SidebarViewBranch = { en: "Branch", zh: "分支" },
@@ -573,7 +574,8 @@ messages! {
     SidebarViewHarness = { en: "Harness", zh: "Harness" },
     SidebarViewProjectIcon = { en: "Project icon", zh: "项目图标" },
     SidebarViewLocation = { en: "Location", zh: "位置" },
-    SidebarViewCompactMode = { en: "Compact mode", zh: "紧凑模式" },
+    SidebarViewCompactMode = { en: "Compact", zh: "紧凑" },
+    SidebarViewCreateSection = { en: "Create Section", zh: "新建分组" },
     SpacesAllProjects = { en: "All projects", zh: "所有项目" },
     SpacesNewProject = { en: "New project…", zh: "新建项目…" },
     SpacesSearchProjects = { en: "Search projects…", zh: "搜索项目…" },
@@ -590,21 +592,24 @@ messages! {
     // Shell → sidebar pin writes (sidebar_pins.rs, spaces.rs, shell.rs).
     SidebarPinsStillSyncing = { en: "Pins are still syncing", zh: "固定项仍在同步" },
     SidebarPinsNotConfirmed = {
-        en: "The engine did not confirm the saved pins",
-        zh: "引擎未确认已保存的固定项"
+        en: "The engine did not confirm the sidebar changes",
+        zh: "引擎未确认侧边栏更改"
     },
     SidebarPinsEngineOffline = {
-        en: "Engine not connected. Pins were not changed.",
-        zh: "引擎未连接，固定项没有改变。"
+        en: "Engine not connected. Sidebar was not changed.",
+        zh: "引擎未连接，侧边栏没有改变。"
     },
     SidebarPinsAwaitingConfirmation = {
-        en: "Waiting for the engine to confirm the previous pin change.",
-        zh: "正在等待引擎确认上一次固定项更改。"
+        en: "Waiting for the engine to confirm the previous sidebar change.",
+        zh: "正在等待引擎确认上一次侧边栏更改。"
     },
-    SidebarPinsSaveFailed = { en: "Couldn't save pins: {error}", zh: "无法保存固定项：{error}" },
+    SidebarPinsSaveFailed = {
+        en: "Couldn't save sidebar changes: {error}",
+        zh: "无法保存侧边栏更改：{error}"
+    },
     SidebarPinsUnconfirmed = {
-        en: "Couldn't confirm pins. Queued edits were cancelled; waiting for the engine before allowing more pin changes.",
-        zh: "无法确认固定项，已取消排队中的更改；在引擎确认之前不再接受新的固定项更改。"
+        en: "Couldn't confirm sidebar changes. Queued edits were cancelled; waiting for the engine before allowing more changes.",
+        zh: "无法确认侧边栏更改，已取消排队中的更改；在引擎确认之前不再接受新的更改。"
     },
     SidebarPinsLimit = {
         en: "You can pin up to 200 sessions",
@@ -801,6 +806,7 @@ messages! {
     NotifyReconnecting = { en: "Zeron is trying to reconnect", zh: "Zeron 正在尝试重新连接" },
 
     // Shell → user menu (shell.rs).
+    MenuAccountAria = { en: "Account menu: {name}", zh: "账户菜单：{name}" },
     MenuEnableSync = { en: "Enable sync", zh: "启用同步" },
     MenuSyncInProgress = { en: "Sync setup in progress", zh: "正在设置同步" },
     MenuFinishSyncSetup = { en: "Finish sync setup", zh: "完成同步设置" },
@@ -1503,6 +1509,7 @@ messages! {
     ShortcutBrowserReload = { en: "Reload browser page", zh: "重新加载浏览器页面" },
     ShortcutToggleSidebar = { en: "Toggle left sidebar", zh: "切换左侧边栏" },
     ShortcutToggleChanges = { en: "Toggle right sidebar", zh: "切换右侧边栏" },
+    ShortcutToggleFiles = { en: "Toggle files panel", zh: "切换文件面板" },
     ShortcutToggleTerminal = { en: "Toggle terminal", zh: "切换终端" },
     ShortcutNewSession = { en: "New session", zh: "新建会话" },
     ShortcutNewProject = { en: "New project", zh: "新建项目" },
@@ -1701,6 +1708,10 @@ messages! {
     ShortcutsToggleChangesDescription = {
         en: "Show or hide the right sidebar for the current session.",
         zh: "显示或隐藏当前会话的右侧边栏。"
+    },
+    ShortcutsToggleFilesDescription = {
+        en: "Show or hide the files panel for the current session.",
+        zh: "显示或隐藏当前会话的文件面板。"
     },
     ShortcutsToggleTerminalDescription = {
         en: "Show or hide the terminal for the current session.",
@@ -2350,6 +2361,82 @@ messages! {
     TranscriptElapsedDays = { en: "{n}d {h}h", zh: "{n}天{h}小时" },
     CountToolOne = { en: "{n} tool", zh: "{n} 个工具" },
     CountToolMany = { en: "{n} tools", zh: "{n} 个工具" },
+
+    // Project actions (shell/actions_ui.rs). `{error}` takes an engine payload
+    // and `{name}` the action's own name; neither is translated.
+    ProjectActionSetupFailed = {
+        en: "Setup action failed: {error}",
+        zh: "初始化动作失败：{error}"
+    },
+    ProjectActionSetupTabTitle = { en: "{name} (setup)", zh: "{name}（初始化）" },
+    ProjectActionSetupTerminalUnavailable = {
+        en: "Setup action started, but its terminal could not be attached",
+        zh: "初始化动作已启动，但无法连接其终端"
+    },
+    ProjectActionsTitle = { en: "Project actions", zh: "项目动作" },
+    ProjectActionsUnavailable = { en: "Actions unavailable", zh: "动作不可用" },
+    ProjectActionAdd = { en: "Add action", zh: "添加动作" },
+    ProjectActionEdit = { en: "Edit action", zh: "编辑动作" },
+    ProjectActionDelete = { en: "Delete action", zh: "删除动作" },
+    ProjectActionDeleteTitle = { en: "Delete action?", zh: "删除动作？" },
+    ProjectActionDeleteBody = {
+        en: "“{name}” will be permanently deleted.",
+        zh: "“{name}” 将被永久删除。"
+    },
+    ProjectActionImport = { en: "Import from zeron.json", zh: "从 zeron.json 导入" },
+    ProjectActionUnavailable = {
+        en: "Project action is no longer available",
+        zh: "项目动作已不可用"
+    },
+    ProjectActionProjectChanged = { en: "The selected project changed", zh: "所选项目已变更" },
+    ProjectActionName = { en: "Name", zh: "名称" },
+    ProjectActionNamePlaceholder = { en: "Action name", zh: "动作名称" },
+    ProjectActionCommand = { en: "Command", zh: "命令" },
+    ProjectActionIcon = { en: "Icon", zh: "图标" },
+    ProjectActionRunOnWorktree = {
+        en: "Run automatically on worktree creation",
+        zh: "创建 worktree 时自动运行"
+    },
+    ProjectActionNameRequired = { en: "Action name is required", zh: "请填写动作名称" },
+    ProjectActionNameTooLong = {
+        en: "Action name must not exceed 80 characters",
+        zh: "动作名称不能超过 80 个字符"
+    },
+    ProjectActionCommandRequired = { en: "Action command is required", zh: "请填写动作命令" },
+    ProjectActionCommandTooLong = {
+        en: "Action command must not exceed 16384 bytes",
+        zh: "动作命令不能超过 16384 字节"
+    },
+    ProjectActionSaving = { en: "Saving…", zh: "保存中…" },
+    ProjectActionSave = { en: "Save action", zh: "保存动作" },
+
+    // Shell → custom sidebar sections (shell/sidebar_sections.rs). `{failed}`
+    // takes the number of sessions the archive pass could not move.
+    SidebarSectionsStillSyncing = {
+        en: "Sidebar is still syncing. Try again shortly.",
+        zh: "侧边栏仍在同步，请稍后重试。"
+    },
+    SidebarSectionsArchiveFailed = {
+        en: "Could not archive {failed} sessions. Try again.",
+        zh: "无法归档 {failed} 个会话，请重试。"
+    },
+    SidebarSectionNamePlaceholder = { en: "Section name", zh: "分组名称" },
+    SidebarSectionEmpty = { en: "Drop sessions here", zh: "将会话拖到此处" },
+    SidebarSectionEdit = { en: "Edit section", zh: "编辑分组" },
+    SidebarSectionNew = { en: "New section", zh: "新建分组" },
+    SidebarSectionCreate = { en: "Create section", zh: "新建分组" },
+    SidebarSectionArchiveAll = { en: "Archive all", zh: "全部归档" },
+    SidebarSectionDialogHint = { en: "Group sessions however you like", zh: "按你的习惯整理会话" },
+
+    // Files → the git-status notice strip (files/git_status.rs) and the titlebar
+    // panel toggle (shell/tabs.rs).
+    FilesGitStatusIncomplete = {
+        en: "Git status unavailable or incomplete",
+        zh: "Git 状态不可用或不完整"
+    },
+    FilesGitStatusUnavailable = { en: "Git status unavailable", zh: "Git 状态不可用" },
+    FilesHidePanel = { en: "Hide files panel", zh: "隐藏文件面板" },
+    FilesShowPanel = { en: "Show files panel", zh: "显示文件面板" },
 }
 
 /// Keys whose Simplified Chinese copy is not written yet. Every row here must

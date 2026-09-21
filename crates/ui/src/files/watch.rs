@@ -145,6 +145,10 @@ impl FilesSurface {
             }
         }
 
+        if self.presentation.is_editor() {
+            cx.notify();
+            return;
+        }
         for parent in &parents {
             self.tree.invalidate_directory(parent);
         }

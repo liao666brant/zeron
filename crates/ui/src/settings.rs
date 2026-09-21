@@ -34,9 +34,13 @@ pub const SIDEBAR_MIN: f32 = 224.0;
 pub const SIDEBAR_MAX: f32 = 400.0;
 pub const SIDEBAR_DEFAULT: f32 = 256.0;
 
-/// Right ("Changes") pane drag-resize floor and default (px). Its runtime
-/// maximum is the window space remaining after the left sidebar and the
-/// conversation's [`CHAT_PANEL_MIN`] reservation.
+/// Independent file explorer width preference and drag bounds (px).
+pub const FILES_PANEL_DEFAULT: f32 = 286.0;
+pub const FILES_PANEL_MIN: f32 = 220.0;
+pub const FILES_PANEL_MAX: f32 = 440.0;
+
+/// Surface pane floor and default (px). Runtime sizing also reserves space
+/// for the conversation and any docked file explorer.
 pub const RIGHT_PANE_MIN: f32 = 360.0;
 pub const RIGHT_PANE_DEFAULT: f32 = 520.0;
 /// Minimum width retained for the conversation when the right pane is open.
@@ -667,6 +671,9 @@ pub struct UiSettings {
     /// also the new-tab default when the sidebar filter is "All".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_space_id: Option<String>,
+    /// Last successfully launched Action per project in this viewport.
+    #[serde(skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub last_project_action_by_space_id: std::collections::HashMap<String, String>,
     /// Open session tabs in visual order (drag-reorder edits in place).
     /// Device-local: a tab is a local viewport onto the synced session list —
     /// closing one never archives the session. Ids of archived/deleted chats
@@ -677,6 +684,9 @@ pub struct UiSettings {
     /// Sidebar session filter: a space id, or `None` for "All spaces".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub space_filter: Option<String>,
+    /// Custom sidebar organization, isolated between account profiles on this device.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub sidebar_sections_by_profile: HashMap<String, Vec<SidebarSection>>,
     /// Device-local pins for local profiles; synced profiles use registry pins.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub sidebar_pinned_session_ids_by_profile: HashMap<String, Vec<String>>,
@@ -703,6 +713,7 @@ pub struct UiSettings {
     /// Suppress the banner while a Zeron window is focused (the chime covers
     /// the foreground case).
     pub notifications_background_only: bool,
+    pub files_panel_width: f32,
     pub right_pane_width: f32,
     /// Legacy: panel *open* flags are session-scoped in-memory state now
     /// (`shell::SessionPanels`, zeron `sessionPanels` parity). Kept for file
@@ -801,9 +812,11 @@ impl Default for UiSettings {
             sidebar_show_branch: true,
             sidebar_show_pull_request: true,
             last_space_id: None,
+            last_project_action_by_space_id: std::collections::HashMap::new(),
             open_tabs: None,
             space_filter: None,
             sidebar_pinned_session_ids_by_profile: HashMap::new(),
+            sidebar_sections_by_profile: HashMap::new(),
             tab_order: std::collections::HashMap::new(),
             space_order: Vec::new(),
             sound_enabled: true,
@@ -812,6 +825,7 @@ impl Default for UiSettings {
             sound_attention_enabled: true,
             notifications_enabled: true,
             notifications_background_only: true,
+            files_panel_width: FILES_PANEL_DEFAULT,
             right_pane_width: RIGHT_PANE_DEFAULT,
             right_pane_open: false,
             terminal_height: TERMINAL_DEFAULT_HEIGHT,
@@ -876,6 +890,7 @@ pub enum ShortcutId {
     BrowserReload,
     ToggleSidebar,
     ToggleChanges,
+    ToggleFiles,
     ToggleTerminal,
     NewSession,
     NewProject,
@@ -887,12 +902,13 @@ pub enum ShortcutId {
 }
 
 impl ShortcutId {
-    pub const ALL: [ShortcutId; 12 + JUMP_SLOTS] = [
+    pub const ALL: [ShortcutId; 13 + JUMP_SLOTS] = [
         ShortcutId::CaptureAppshot,
         ShortcutId::SaveFile,
         ShortcutId::BrowserReload,
         ShortcutId::ToggleSidebar,
         ShortcutId::ToggleChanges,
+        ShortcutId::ToggleFiles,
         ShortcutId::ToggleTerminal,
         ShortcutId::NewSession,
         ShortcutId::NewProject,
@@ -925,6 +941,7 @@ impl ShortcutId {
             ShortcutId::BrowserReload => Some(MessageId::ShortcutBrowserReload),
             ShortcutId::ToggleSidebar => Some(MessageId::ShortcutToggleSidebar),
             ShortcutId::ToggleChanges => Some(MessageId::ShortcutToggleChanges),
+            ShortcutId::ToggleFiles => Some(MessageId::ShortcutToggleFiles),
             ShortcutId::ToggleTerminal => Some(MessageId::ShortcutToggleTerminal),
             ShortcutId::NewSession => Some(MessageId::ShortcutNewSession),
             ShortcutId::NewProject => Some(MessageId::ShortcutNewProject),
@@ -968,6 +985,7 @@ impl ShortcutId {
             ShortcutId::BrowserReload => "mod-shift-r",
             ShortcutId::ToggleSidebar => "mod-b",
             ShortcutId::ToggleChanges => "mod-r",
+            ShortcutId::ToggleFiles => "mod-e",
             ShortcutId::ToggleTerminal => "mod-j",
             ShortcutId::NewSession => "mod-n",
             ShortcutId::NewProject => "mod-shift-n",
@@ -1014,6 +1032,7 @@ pub struct KeymapConfig {
     pub browser_reload: String,
     pub toggle_sidebar: String,
     pub toggle_changes: String,
+    pub toggle_files: String,
     pub toggle_terminal: String,
     pub new_session: String,
     pub new_project: String,
@@ -1077,6 +1096,7 @@ impl Default for KeymapConfig {
             browser_reload: ShortcutId::BrowserReload.default_combo().into(),
             toggle_sidebar: ShortcutId::ToggleSidebar.default_combo().into(),
             toggle_changes: ShortcutId::ToggleChanges.default_combo().into(),
+            toggle_files: ShortcutId::ToggleFiles.default_combo().into(),
             toggle_terminal: ShortcutId::ToggleTerminal.default_combo().into(),
             new_session: ShortcutId::NewSession.default_combo().into(),
             new_project: ShortcutId::NewProject.default_combo().into(),
@@ -1097,6 +1117,7 @@ impl KeymapConfig {
             ShortcutId::BrowserReload => &self.browser_reload,
             ShortcutId::ToggleSidebar => &self.toggle_sidebar,
             ShortcutId::ToggleChanges => &self.toggle_changes,
+            ShortcutId::ToggleFiles => &self.toggle_files,
             ShortcutId::ToggleTerminal => &self.toggle_terminal,
             ShortcutId::NewSession => &self.new_session,
             ShortcutId::NewProject => &self.new_project,
@@ -1119,6 +1140,7 @@ impl KeymapConfig {
             ShortcutId::BrowserReload => self.browser_reload = combo,
             ShortcutId::ToggleSidebar => self.toggle_sidebar = combo,
             ShortcutId::ToggleChanges => self.toggle_changes = combo,
+            ShortcutId::ToggleFiles => self.toggle_files = combo,
             ShortcutId::ToggleTerminal => self.toggle_terminal = combo,
             ShortcutId::NewSession => self.new_session = combo,
             ShortcutId::NewProject => self.new_project = combo,
@@ -1377,6 +1399,12 @@ impl UiSettings {
         );
         // The right pane has no persisted upper bound: its live drag clamps
         // against the current window, which is unavailable while loading.
+        self.files_panel_width = clamp_or(
+            self.files_panel_width,
+            FILES_PANEL_MIN,
+            FILES_PANEL_MAX,
+            FILES_PANEL_DEFAULT,
+        );
         self.right_pane_width = min_or(self.right_pane_width, RIGHT_PANE_MIN, RIGHT_PANE_DEFAULT);
         self.terminal_height = clamp_or(
             self.terminal_height,
@@ -1480,6 +1508,27 @@ impl UiSettings {
                             keymap.insert(field.into(), serde_json::json!(combo));
                         }
                     }
+                    // A shortcut added after the file was written takes its
+                    // default only when that combo is free: a user who had
+                    // already bound the same chord elsewhere keeps their
+                    // binding and the new row arrives unbound.
+                    if let Some(keymap) = value
+                        .get_mut("keymap")
+                        .and_then(serde_json::Value::as_object_mut)
+                    {
+                        for (id, field) in [(ShortcutId::ToggleFiles, "toggleFiles")] {
+                            let default = platform_combo(id.default_combo());
+                            let taken = !keymap.contains_key(field)
+                                && keymap.values().any(|existing| {
+                                    existing
+                                        .as_str()
+                                        .is_some_and(|combo| platform_combo(combo) == default)
+                                });
+                            if taken {
+                                keymap.insert(field.into(), serde_json::json!(""));
+                            }
+                        }
+                    }
                     serde_json::from_value::<UiSettings>(value)
                 }) {
                     Ok(settings) => settings.migrated().clamped(),
@@ -1534,6 +1583,8 @@ fn min_or(value: f32, min: f32, default: f32) -> f32 {
         default
     }
 }
+
+pub use zeron_proto::SidebarSection;
 
 #[cfg(test)]
 mod tests {
@@ -2029,8 +2080,13 @@ mod tests {
             sidebar_show_branch: false,
             sidebar_show_pull_request: false,
             last_space_id: Some("space-1".into()),
+            last_project_action_by_space_id: std::collections::HashMap::from([(
+                "space-1".into(),
+                "dev".into(),
+            )]),
             open_tabs: Some(vec!["b".to_string(), "a".to_string()]),
             space_filter: Some("space-1".into()),
+            sidebar_sections_by_profile: HashMap::new(),
             sidebar_pinned_session_ids_by_profile: HashMap::from([
                 (
                     "local".to_string(),
@@ -2052,6 +2108,7 @@ mod tests {
             sound_attention_enabled: false,
             notifications_enabled: false,
             notifications_background_only: false,
+            files_panel_width: 310.0,
             right_pane_width: 700.0,
             right_pane_open: true,
             terminal_height: 320.0,
@@ -2549,6 +2606,32 @@ mod tests {
         assert_eq!(settings.sidebar_pins("synced:org-a:user-a"), ["a-1"]);
         assert_eq!(settings.sidebar_pins("synced:org-b:user-b"), ["b-1"]);
         assert_eq!(settings.sidebar_pins("synced:org-a:user-a"), ["a-1"]);
+    }
+
+    #[test]
+    fn files_panel_width_defaults_roundtrips_and_clamps() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(UiSettings::path(dir.path()), r#"{"sidebarWidth":256}"#).unwrap();
+        assert_eq!(
+            UiSettings::load(dir.path()).files_panel_width,
+            FILES_PANEL_DEFAULT
+        );
+        for (value, expected) in [
+            (310.0, 310.0),
+            (1.0, FILES_PANEL_MIN),
+            (900.0, FILES_PANEL_MAX),
+            (f32::NAN, FILES_PANEL_DEFAULT),
+        ] {
+            let settings = UiSettings {
+                files_panel_width: value,
+                ..Default::default()
+            }
+            .clamped();
+            assert_eq!(settings.files_panel_width, expected);
+            let encoded = serde_json::to_string(&settings).unwrap();
+            let decoded: UiSettings = serde_json::from_str(&encoded).unwrap();
+            assert_eq!(decoded.files_panel_width, expected);
+        }
     }
 
     #[test]
@@ -3095,6 +3178,32 @@ mod tests {
         assert_eq!(combo_modifiers("mod-alt-shift-k"), (true, true, true));
         assert_eq!(combo_modifiers("f5"), (false, false, false));
         assert_eq!(combo_modifiers("shift-tab"), (false, false, true));
+    }
+
+    #[test]
+    fn a_new_shortcut_default_yields_to_an_existing_custom_binding() {
+        // Upgrade path: a file that predates the files-panel shortcut and had
+        // already put its default chord on another action keeps that binding
+        // and the new row arrives unbound rather than double-bound.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            UiSettings::path(dir.path()),
+            r#"{"keymap": {"saveFile": "mod-s", "toggleTerminal": "mod-e"}}"#,
+        )
+        .unwrap();
+        let keymap = UiSettings::load(dir.path()).keymap;
+        assert_eq!(keymap.get(ShortcutId::ToggleTerminal), "mod-e");
+        assert_eq!(keymap.get(ShortcutId::ToggleFiles), "");
+        assert!(conflicted_shortcuts(&keymap).is_empty());
+
+        // With the chord free, the new row takes its default.
+        std::fs::write(
+            UiSettings::path(dir.path()),
+            r#"{"keymap": {"saveFile": "mod-s", "toggleTerminal": "mod-j"}}"#,
+        )
+        .unwrap();
+        let keymap = UiSettings::load(dir.path()).keymap;
+        assert_eq!(keymap.get(ShortcutId::ToggleFiles), "mod-e");
     }
 
     #[test]

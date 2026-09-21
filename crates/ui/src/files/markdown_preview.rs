@@ -24,6 +24,7 @@ const MAX_MEDIA_BYTES: usize = 64 * 1024 * 1024;
 const MAX_MEDIA_ENTRIES: usize = 32;
 const MAX_MARKDOWN_BYTES: usize = 2 * 1024 * 1024;
 const MAX_PREVIEW_CONTENT_WIDTH: f32 = 900.0;
+const PREVIEW_VERTICAL_PADDING: f32 = 16.0;
 
 /// A visual block cites its first source line. Notes on inner lines (for
 /// example list items or fenced code) remain attached to that containing block.
@@ -963,7 +964,10 @@ impl MarkdownPreview {
 
     #[cfg(test)]
     pub(super) fn test_block_bounds(&self, ix: usize) -> gpui::Bounds<gpui::Pixels> {
-        self.list.bounds_for_item(ix).unwrap()
+        let mut bounds = self.list.bounds_for_item(ix).unwrap();
+        // GPUI's bounds_for_item omits the list padding applied during paint.
+        bounds.origin.y += px(PREVIEW_VERTICAL_PADDING);
+        bounds
     }
 
     fn render_row(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
@@ -1306,7 +1310,6 @@ impl Render for MarkdownPreview {
             .min_h_0()
             .flex()
             .flex_col()
-            .py(px(16.0))
             .font_family(theme.font_sans.clone())
             .text_color(theme.text)
             .track_focus(&self.focus)
@@ -1357,6 +1360,9 @@ impl Render for MarkdownPreview {
                 list(self.list.clone(), cx.processor(Self::render_row))
                     .flex_1()
                     .min_h_0()
+                    // Scroll the breathing room with the document so content
+                    // clips at the viewport edge, directly below the toolbar.
+                    .py(px(PREVIEW_VERTICAL_PADDING))
                     .with_sizing_behavior(ListSizingBehavior::Auto),
             );
         if let Some(preview) = &self.preview_image {
@@ -1608,7 +1614,7 @@ mod layout_tests {
             cx.update_window(window.into(), |_, window, cx| {
                 window.refresh();
                 let _ = window.draw(cx);
-                let bounds = preview.read(cx).list.bounds_for_item(0).unwrap();
+                let bounds = preview.read(cx).test_block_bounds(0);
                 let gutter =
                     ((bounds.size.width - px(MAX_PREVIEW_CONTENT_WIDTH)) / 2.0).max(px(24.0));
                 let position =
@@ -1772,7 +1778,7 @@ mod layout_tests {
             }).unwrap();
             let view = window.entity(cx).unwrap();
             cx.update_window(window.into(), |_, window, cx| { window.refresh(); let _ = window.draw(cx); }).unwrap();
-            let bounds = view.read(cx).list.bounds_for_item(0).unwrap();
+            let bounds = view.read(cx).test_block_bounds(0);
             assert!(bounds.size.height > px(100.0));
             let position = bounds.center();
             cx.update_window(window.into(), |_, window, cx| {
@@ -1840,7 +1846,7 @@ mod layout_tests {
             })
             .unwrap();
 
-            let bounds = view.read(cx).list.bounds_for_item(0).unwrap();
+            let bounds = view.read(cx).test_block_bounds(0);
             let image_position =
                 gpui::point(bounds.center().x, bounds.top() + px(28.0 + 80.0));
             cx.update_window(window.into(), |_, window, cx| {

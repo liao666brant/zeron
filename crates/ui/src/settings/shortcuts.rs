@@ -505,9 +505,10 @@ fn group(id: ShortcutId) -> &'static str {
         ShortcutId::CaptureAppshot => "Appshots",
         ShortcutId::SaveFile => "Files",
         ShortcutId::BrowserReload => "Browser",
-        ShortcutId::ToggleSidebar | ShortcutId::ToggleChanges | ShortcutId::ToggleTerminal => {
-            "Panels"
-        }
+        ShortcutId::ToggleSidebar
+        | ShortcutId::ToggleChanges
+        | ShortcutId::ToggleFiles
+        | ShortcutId::ToggleTerminal => "Panels",
         ShortcutId::NewProject => "Projects",
         ShortcutId::OpenModelPicker
         | ShortcutId::NewSession
@@ -544,6 +545,7 @@ fn description_message(id: ShortcutId) -> MessageId {
         ShortcutId::BrowserReload => MessageId::ShortcutsBrowserReloadDescription,
         ShortcutId::ToggleSidebar => MessageId::ShortcutsToggleSidebarDescription,
         ShortcutId::ToggleChanges => MessageId::ShortcutsToggleChangesDescription,
+        ShortcutId::ToggleFiles => MessageId::ShortcutsToggleFilesDescription,
         ShortcutId::ToggleTerminal => MessageId::ShortcutsToggleTerminalDescription,
         ShortcutId::NewSession => MessageId::ShortcutsNewSessionDescription,
         ShortcutId::NewProject => MessageId::ShortcutsNewProjectDescription,

@@ -1,4 +1,4 @@
-//! Optimistic pin writes are an overlay, never the authoritative watch state.
+//! Optimistic pin/section writes are an overlay, never the authoritative watch state.
 //! Serialize drops per attachment; old replies cannot undo a newer drop/profile.
 
 use super::*;
@@ -182,6 +182,19 @@ impl Shell {
         {
             return None;
         }
+        let imported_profile = if result.is_ok() {
+            self.sidebar_pin_write.as_ref().and_then(|pending| {
+                matches!(
+                    pending.queue.front(),
+                    Some(SidebarPinChange::Section {
+                        change: zeron_proto::SidebarSectionChange::Import { .. }
+                    })
+                )
+                .then(|| pending.profile_key.clone())
+            })
+        } else {
+            None
+        };
         match result {
             Ok(value) => {
                 self.clear_pin_write_notice();
@@ -203,6 +216,11 @@ impl Shell {
                     .into(),
                 );
             }
+        }
+        if let Some(profile) = imported_profile {
+            // The engine durably owns these rows (including its offline outbox).
+            self.settings.sidebar_sections_by_profile.remove(&profile);
+            self.schedule_save(cx);
         }
         let pending = self.sidebar_pin_write.as_mut().unwrap();
         pending.queue.pop_front();
