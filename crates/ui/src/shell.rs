@@ -206,6 +206,17 @@ fn conversation_width(viewport: f32, sidebar: f32, right: f32) -> f32 {
     (viewport - sidebar - right).max(0.0)
 }
 
+fn composer_target_width(panel_width: f32, content_width: f32, docked: bool) -> f32 {
+    let panel_width = panel_width.max(0.0);
+    if !docked {
+        return panel_width.min(crate::composer::COMPOSER_MAX_WIDTH);
+    }
+    // Share the configurable maximum, including the composer's outer padding.
+    // Below that maximum, keep the original full-panel responsive width: using
+    // transcript gutters here would remove 64px and wrap attachments too early.
+    (content_width + 2.0 * Theme::SPACE_LG).min(panel_width)
+}
+
 fn titlebar_new_session_alpha(is_chat_route: bool, has_selected_chat: bool) -> f32 {
     if is_chat_route && has_selected_chat {
         1.0
@@ -1646,6 +1657,7 @@ pub struct Shell {
     /// while open.
     add_space: Option<AddSpaceFlow>,
     command_palette: Option<command_palette::CommandPalette>,
+    pending_workspace_command: Option<crate::composer::WorkspaceCommand>,
     /// The sidebar's space-filter dropdown.
     spaces_menu: popover::Popup<spaces::SpacesMenu>,
     /// Hover/drag + scroll-linger state of the dropdown's floating rail.
@@ -1835,6 +1847,10 @@ impl Shell {
         let composer_events = cx.subscribe(&composer, {
             let transcript = transcript.clone();
             move |this: &mut Shell, _, event: &ComposerEvent, cx| match event {
+                ComposerEvent::WorkspaceCommand(command) => {
+                    this.pending_workspace_command = Some(*command);
+                    cx.notify();
+                }
                 ComposerEvent::NewThreadTransitionStarted => {
                     // Route observation drives the dock once selection commits.
                     cx.notify();
@@ -2039,6 +2055,7 @@ impl Shell {
             delete_space_confirm: None,
             add_space: None,
             command_palette: None,
+            pending_workspace_command: None,
             spaces_menu: popover::Popup::default(),
             spaces_menu_bar: popover::MenuScrollbarState::default(),
             sidebar_view_menu: popover::Popup::default(),
@@ -2278,6 +2295,7 @@ impl Shell {
                     device_id: "local".into(),
                     status: None,
                     continuation_of: None,
+                    duration_ms: None,
                 };
                 state.update(cx, |s, cx| {
                     s.push_echo(&chat_id, echo);
@@ -3824,6 +3842,8 @@ impl Shell {
         self.settings.code_font_family = current.code_font_family;
         self.settings.code_font_size = current.code_font_size;
         self.settings.transcript_width = current.transcript_width;
+        self.settings.skill_completion_by_harness = current.skill_completion_by_harness;
+        self.settings.skills_in_slash_menu = current.skills_in_slash_menu;
     }
 
     fn retry_engine(&mut self, cx: &mut Context<Self>) {
@@ -3928,6 +3948,11 @@ impl Shell {
         if section == SettingsSection::Harnesses {
             self.harnesses_page = None;
         }
+        if section == SettingsSection::Shortcuts
+            && let Some(page) = &self.shortcuts_page
+        {
+            page.update(cx, |page, cx| page.load_completion_harnesses(cx));
+        }
         self.route = Route::Settings(section);
         self.nav.push(NavEntry::Settings(section));
         self.close_user_menu(cx);
@@ -3971,6 +3996,11 @@ impl Shell {
                 }
             }
             NavEntry::Settings(section) => {
+                if section == SettingsSection::Shortcuts
+                    && let Some(page) = &self.shortcuts_page
+                {
+                    page.update(cx, |page, cx| page.load_completion_harnesses(cx));
+                }
                 self.route = Route::Settings(section);
             }
         }
@@ -8682,7 +8712,11 @@ impl Shell {
         self.composer
             .update(cx, |composer, cx| composer.set_dock_frame(dock_frame, cx));
         let composer_width = self.composer_dock.borrow_mut().layout_width(
-            main_content_width.min(crate::composer::COMPOSER_MAX_WIDTH),
+            composer_target_width(
+                main_content_width,
+                ui_settings.transcript_width,
+                has_selection,
+            ),
             self.reduced_motion,
             frame_time,
         );
@@ -8797,7 +8831,7 @@ impl Shell {
             Empty.into_any_element()
         };
 
-        let status = self.render_status_strip(cx);
+        let status = self.render_status_strip(composer_width, cx);
         // Attachment dropzone over the ENTIRE conversation column (transcript
         // + composer, not just the pill). OS images keep using the upload
         // pipeline; workspace files/directories and file tabs become the same
@@ -9206,18 +9240,18 @@ impl Shell {
     /// Working indicator strip: gradient spinner + rotating flavour word (7s,
     /// seeded per chat) + elapsed, staleness-gated via [`Indicator`]; falls back
     /// to a "Sending…" bridge and then the engine mode line.
-    fn render_status_strip(&mut self, cx: &mut Context<Self>) -> AnyElement {
+    fn render_status_strip(&mut self, composer_width: f32, cx: &mut Context<Self>) -> AnyElement {
         let theme = Theme::of(cx).clone();
         let now = Utc::now();
         let state = self.state.read(cx);
 
-        // Aligned with the composer column: centered, same max width, small
-        // inner gutter (zeron's `mx-auto h-6 max-w-3xl px-2`).
+        // Keep notices aligned with the current composer width, including
+        // the route glide. The inner gutter sits just inside the pill edge.
         let strip = div()
             .h(px(Theme::STATUS_STRIP_HEIGHT))
             .flex_none()
             .w_full()
-            .max_w(px(768.0))
+            .max_w(px(composer_width))
             .mx_auto()
             .flex()
             .items_center()
@@ -10847,6 +10881,32 @@ fn header_icon_button(
 
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if let Some(command) = self.pending_workspace_command.take() {
+            use crate::composer::WorkspaceCommand;
+            match command {
+                WorkspaceCommand::Model => self
+                    .composer
+                    .update(cx, |c, cx| c.open_model_menu(window, cx)),
+                WorkspaceCommand::New => self.open_new_session(cx),
+                WorkspaceCommand::Resume => self.toggle_command_palette(window, cx),
+                WorkspaceCommand::Settings => self.open_settings(SettingsSection::Devices, cx),
+                WorkspaceCommand::Diff if !self.active_chat.is_empty() => self.add_diff_surface(cx),
+                WorkspaceCommand::Files if !self.active_chat.is_empty() => {
+                    self.add_files_surface(window, cx)
+                }
+                WorkspaceCommand::Terminal if !self.active_chat.is_empty() => {
+                    self.add_terminal_surface(cx)
+                }
+                WorkspaceCommand::Rename if !self.active_chat.is_empty() => {
+                    self.open_rename_chat(self.active_chat.clone(), cx)
+                }
+                WorkspaceCommand::Stop => {
+                    self.composer.update(cx, |c, cx| c.interrupt_selected(cx))
+                }
+                _ => {}
+            }
+        }
+
         self.render_time = Some(std::time::Instant::now());
         if self.all_file_edits_flushed(cx)
             && let Some(action) = self.pending_exit.take()
@@ -11211,7 +11271,7 @@ impl Render for Shell {
                 if self.debug_dialog.as_deref() == Some("model") {
                     self.debug_dialog = None;
                     self.composer
-                        .update(cx, |c, cx| c.debug_open_model_menu(window, cx));
+                        .update(cx, |c, cx| c.open_model_menu(window, cx));
                 }
                 // MessageRail width gate: hide below 48rem of main-panel width.
                 let viewport = f32::from(window.viewport_size().width);
@@ -11813,6 +11873,43 @@ mod tests {
         assert_eq!(titlebar_new_session_alpha(true, false), 0.0);
         assert_eq!(titlebar_new_session_alpha(false, true), 0.0);
         assert_eq!(titlebar_new_session_alpha(false, false), 0.0);
+    }
+
+    #[test]
+    fn composer_width_shares_the_maximum_only_in_established_threads() {
+        for (setting, outer) in [(560.0, 592.0), (736.0, 768.0), (1200.0, 1232.0)] {
+            assert_eq!(composer_target_width(1600.0, setting, true), outer);
+            assert_eq!(composer_target_width(1600.0, setting, false), 768.0);
+            // Narrow panes keep the composer's original gutters and usable width.
+            assert_eq!(composer_target_width(500.0, setting, true), 500.0);
+            assert_eq!(composer_target_width(500.0, setting, false), 500.0);
+            assert_eq!(composer_target_width(0.0, setting, true), 0.0);
+        }
+    }
+
+    #[test]
+    fn default_composer_width_preserves_main_resizing_and_many_attachment_rows() {
+        for panel_width in (0..=1600).step_by(8) {
+            let panel_width = panel_width as f32;
+            assert_eq!(
+                composer_target_width(panel_width, settings::TRANSCRIPT_WIDTH_DEFAULT, true),
+                panel_width.min(crate::composer::COMPOSER_MAX_WIDTH),
+                "default width must preserve main's responsive layout at {panel_width}px"
+            );
+        }
+        // At the same 300px pane width, main fits three thumbnails per row.
+        // Applying transcript gutters reduced this to two and turned 60 images
+        // from a 1284px strip into a 1924px strip, pushing controls off-screen.
+        for setting in [560.0, 736.0, 1200.0] {
+            let width = composer_target_width(300.0, setting, true);
+            let inner = width - 2.0 * Theme::SPACE_LG - 2.0;
+            for (count, expected_height) in [(3, 68.0), (60, 1284.0), (120, 2564.0)] {
+                assert_eq!(
+                    crate::composer::attachment_strip_height(count, inner),
+                    expected_height
+                );
+            }
+        }
     }
 
     #[test]
@@ -12804,6 +12901,13 @@ mod exit_regressions {
                         settings.code_font_family = code_family.clone();
                         settings.code_font_size = code_size;
                         settings.transcript_width = transcript_width;
+                        settings.skill_completion_by_harness.insert(
+                            zeron_proto::HarnessId::ClaudeCode,
+                            settings::SkillCompletionSettings {
+                                dollar: open_links_in_zeron,
+                                separate_from_slash: true,
+                            },
+                        );
                     });
                     for step in 0..3 {
                         shell.settings.sidebar_width = 290.0 + step as f32;
@@ -12819,6 +12923,17 @@ mod exit_regressions {
                         assert_eq!(current.code_font_family, code_family);
                         assert_eq!(current.code_font_size, code_size);
                         assert_eq!(current.transcript_width, transcript_width);
+                        assert_eq!(
+                            current
+                                .skill_completion(zeron_proto::HarnessId::ClaudeCode)
+                                .dollar,
+                            open_links_in_zeron
+                        );
+                        assert!(
+                            current
+                                .skill_completion(zeron_proto::HarnessId::ClaudeCode)
+                                .separate_from_slash
+                        );
                     }
                     settings::flush(cx);
                     let loaded = settings::UiSettings::load(dir.path());
@@ -12836,6 +12951,60 @@ mod exit_regressions {
                 })
                 .unwrap();
         }
+    }
+
+    #[gpui::test]
+    fn workspace_slash_commands_open_existing_zeron_surfaces(cx: &mut TestAppContext) {
+        use crate::composer::WorkspaceCommand;
+        let dir = tempfile::tempdir().unwrap();
+        cx.update(|cx| {
+            gpui_base::init(cx);
+            cx.set_global(Theme::default());
+            crate::app_menus::init(cx);
+            crate::history::init(
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                cx,
+            );
+            settings::init(settings::UiSettings::default(), dir.path(), cx);
+        });
+        let window = cx.add_window(|_, cx| {
+            let state = cx.new(|_| AppState::new());
+            Shell::new(
+                state,
+                EngineBootConfig {
+                    data_dir: dir.path().into(),
+                    ipc_port: 0,
+                    edge_url: "http://127.0.0.1:1".into(),
+                    edge_token: None,
+                    org_id: None,
+                    workos_client_id: None,
+                    default_harness: zeron_proto::HarnessId::Mock,
+                },
+                cx,
+            )
+        });
+        window
+            .update(cx, |shell, window, cx| {
+                shell.pending_workspace_command = Some(WorkspaceCommand::Settings);
+                let _ = shell.render(window, cx);
+                assert!(matches!(shell.route, Route::Settings(_)));
+                shell.pending_workspace_command = Some(WorkspaceCommand::New);
+                let _ = shell.render(window, cx);
+                assert!(matches!(shell.route, Route::Chat));
+                assert!(shell.state.read(cx).selected_chat.is_none());
+                shell.pending_workspace_command = Some(WorkspaceCommand::Resume);
+                let _ = shell.render(window, cx);
+                assert!(shell.command_palette.is_some());
+                shell.close_command_palette(window, cx);
+                shell.pending_workspace_command = Some(WorkspaceCommand::Model);
+                let _ = shell.render(window, cx);
+                assert!(shell.composer.read(cx).pickers().read(cx).is_open());
+                assert!(shell.pending_workspace_command.is_none());
+            })
+            .unwrap();
     }
 
     #[gpui::test]

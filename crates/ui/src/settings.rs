@@ -462,6 +462,24 @@ pub fn code_fences_generation(cx: &App) -> u64 {
         .unwrap_or_default()
 }
 
+/// Compact transcript mode: each turn's work folds into one collapsed
+/// accordion, leaving only the reply text. Transcripts poll this during
+/// render and rebuild their row split on a flip — cheap by design (a bool
+/// field read, not a `current()` clone).
+pub fn transcript_compact_mode(cx: &App) -> bool {
+    cx.try_global::<SettingsStore>()
+        .map(|store| store.current.transcript_compact_mode)
+        .unwrap_or_default()
+}
+
+pub fn set_transcript_compact_mode(enabled: bool, cx: &mut App) {
+    if update(SavePolicy::Immediate, cx, |settings| {
+        settings.transcript_compact_mode = enabled;
+    }) {
+        cx.refresh_windows();
+    }
+}
+
 pub fn update(policy: SavePolicy, cx: &mut App, mutate: impl FnOnce(&mut UiSettings)) -> bool {
     if !cx.has_global::<SettingsStore>() {
         return false;
@@ -643,6 +661,36 @@ impl WindowGeometry {
     }
 }
 
+/// Trigger preferences belong to each harness, not the currently selected model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillCompletionSettings {
+    pub dollar: bool,
+    pub separate_from_slash: bool,
+}
+
+impl SkillCompletionSettings {
+    pub fn for_harness(harness: zeron_proto::HarnessId) -> Self {
+        let native_dollar = harness == zeron_proto::HarnessId::Codex;
+        Self {
+            dollar: native_dollar,
+            separate_from_slash: native_dollar,
+        }
+    }
+}
+
+pub const SKILL_COMPLETION_HARNESSES: [(zeron_proto::HarnessId, &str); 9] = [
+    (zeron_proto::HarnessId::Antigravity, "Antigravity"),
+    (zeron_proto::HarnessId::ClaudeCode, "Claude Code"),
+    (zeron_proto::HarnessId::Codex, "Codex"),
+    (zeron_proto::HarnessId::Cursor, "Cursor"),
+    (zeron_proto::HarnessId::Devin, "Devin"),
+    (zeron_proto::HarnessId::Grok, "Grok"),
+    (zeron_proto::HarnessId::Hermes, "Hermes"),
+    (zeron_proto::HarnessId::Pi, "Pi"),
+    (zeron_proto::HarnessId::Opencode, "OpenCode"),
+];
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct UiSettings {
@@ -650,6 +698,10 @@ pub struct UiSettings {
     pub window_geometry: Option<WindowGeometry>,
     /// Submit using Enter or the platform modifier plus Enter.
     pub composer_send_behavior: ComposerSendBehavior,
+    /// Legacy global opt-in; per-harness preferences take precedence.
+    pub skills_in_slash_menu: bool,
+    pub skill_completion_by_harness:
+        std::collections::HashMap<zeron_proto::HarnessId, SkillCompletionSettings>,
     pub sidebar_width: f32,
     pub sidebar_collapsed: bool,
     /// Legacy: the grouped-by-project toggle predates spaces (which group by
@@ -768,11 +820,16 @@ pub struct UiSettings {
     /// Agent-sent Markdown fences: wrap long lines to the chat width instead
     /// of exposing their horizontal scroll plane.
     pub code_fences_fit_content: bool,
-    /// Maximum conversation width in logical pixels; composer width is independent.
+    /// Maximum message and docked composer surface width in logical pixels.
+    /// The centered new-chat composer keeps its own width.
     pub transcript_width: f32,
     /// Open a normal web-link activation in the session Browser. Explicit
     /// context-menu actions remain available regardless of this preference.
     pub open_web_links_in_zeron: bool,
+    /// Compact transcript: a turn's working steps (thinking, tool calls, and
+    /// the narration between them) fold into one collapsed accordion, so only
+    /// the reply text stays visible.
+    pub transcript_compact_mode: bool,
     /// Save edited workspace files automatically after the configured delay.
     pub files_autosave_enabled: bool,
     /// Idle time before an edited workspace file is saved automatically.
@@ -833,6 +890,8 @@ impl Default for UiSettings {
             keymap: KeymapConfig::default(),
             escape_stops_active_agent: false,
             composer_send_behavior: ComposerSendBehavior::default(),
+            skills_in_slash_menu: false,
+            skill_completion_by_harness: Default::default(),
             appshots_enabled: false,
             appshot_sound_enabled: true,
             appshot_destination: crate::appshots::AppshotDestination::Automatic,
@@ -854,6 +913,7 @@ impl Default for UiSettings {
             code_fences_fit_content: false,
             transcript_width: TRANSCRIPT_WIDTH_DEFAULT,
             open_web_links_in_zeron: true,
+            transcript_compact_mode: false,
             files_autosave_enabled: false,
             files_autosave_delay_ms: FILES_AUTOSAVE_DELAY_DEFAULT_MS,
             files_word_wrap: false,
@@ -1376,6 +1436,19 @@ impl UiSettings {
             .or_default()
     }
 
+    pub fn skill_completion(&self, harness: zeron_proto::HarnessId) -> SkillCompletionSettings {
+        self.skill_completion_by_harness
+            .get(&harness)
+            .copied()
+            .unwrap_or_else(|| {
+                let mut settings = SkillCompletionSettings::for_harness(harness);
+                if self.skills_in_slash_menu {
+                    settings.separate_from_slash = false;
+                }
+                settings
+            })
+    }
+
     /// Whether this session event may produce audio. Appshot capture has its
     /// own feature-local preference once the Appshots contribution lands.
     pub fn session_sound_enabled(&self, sound: crate::sound::Sound) -> bool {
@@ -1589,6 +1662,58 @@ pub use zeron_proto::SidebarSection;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn skill_completion_defaults_overrides_and_persistence_are_per_harness() {
+        use zeron_proto::HarnessId;
+        let dir = tempfile::tempdir().unwrap();
+        let mut settings = UiSettings::default();
+        for (harness, _) in SKILL_COMPLETION_HARNESSES {
+            let preferences = settings.skill_completion(harness);
+            assert_eq!(preferences.dollar, harness == HarnessId::Codex);
+            assert_eq!(preferences.separate_from_slash, harness == HarnessId::Codex);
+        }
+        settings.skill_completion_by_harness.insert(
+            HarnessId::ClaudeCode,
+            SkillCompletionSettings {
+                dollar: true,
+                separate_from_slash: true,
+            },
+        );
+        settings.skill_completion_by_harness.insert(
+            HarnessId::Opencode,
+            SkillCompletionSettings {
+                dollar: true,
+                separate_from_slash: false,
+            },
+        );
+        settings.save(dir.path()).unwrap();
+        let loaded = UiSettings::load(dir.path());
+        assert_eq!(
+            settings.skill_completion_by_harness,
+            loaded.skill_completion_by_harness
+        );
+        assert!(loaded.skill_completion(HarnessId::ClaudeCode).dollar);
+        assert!(!loaded.skill_completion(HarnessId::Cursor).dollar);
+        let legacy: UiSettings = serde_json::from_str(r#"{"skillsInSlashMenu":true}"#).unwrap();
+        assert!(
+            !legacy
+                .skill_completion(HarnessId::Codex)
+                .separate_from_slash
+        );
+        assert!(legacy.skill_completion(HarnessId::Codex).dollar);
+    }
+
+    #[test]
+    fn slash_skills_are_opt_in_and_persist() {
+        let old: UiSettings = serde_json::from_str("{}").unwrap();
+        assert!(!old.skills_in_slash_menu);
+        let dir = tempfile::tempdir().unwrap();
+        let mut settings = old;
+        settings.skills_in_slash_menu = true;
+        settings.save(dir.path()).unwrap();
+        assert!(UiSettings::load(dir.path()).skills_in_slash_menu);
+    }
 
     #[test]
     fn composer_send_behavior_is_opt_in_for_old_and_partial_settings() {
@@ -2119,6 +2244,8 @@ mod tests {
             },
             escape_stops_active_agent: true,
             composer_send_behavior: ComposerSendBehavior::ModEnter,
+            skills_in_slash_menu: true,
+            skill_completion_by_harness: Default::default(),
             appshots_enabled: false,
             appshot_sound_enabled: true,
             // The destination is only persisted where Appshots exist (macOS and
@@ -2157,6 +2284,7 @@ mod tests {
             code_fences_fit_content: true,
             transcript_width: 960.0,
             open_web_links_in_zeron: false,
+            transcript_compact_mode: true,
             files_autosave_enabled: true,
             files_autosave_delay_ms: 1_500,
             files_word_wrap: true,

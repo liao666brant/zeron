@@ -209,8 +209,13 @@ messages! {
     // Settings → Appearance: conversation width.
     AppearanceConversationWidth = { en: "Conversation width", zh: "会话宽度" },
     AppearanceConversationWidthHint = {
-        en: "Maximum width of messages. Adapts to smaller windows.",
-        zh: "消息的最大宽度。会随窗口变小而自适应。"
+        en: "Maximum width of messages and the composer in conversations. Adapts to smaller windows.",
+        zh: "会话中消息与输入框的最大宽度。会随窗口变小而自适应。"
+    },
+    AppearanceCompactMode = { en: "Compact mode", zh: "紧凑模式" },
+    AppearanceCompactModeHint = {
+        en: "Fold a turn's thinking, tool calls, and narration into one collapsed row — only the reply shows.",
+        zh: "将一轮中的思考、工具调用与叙述折叠为一行 — 只显示回复内容。"
     },
     CommonReset = { en: "Reset", zh: "重置" },
 
@@ -435,6 +440,9 @@ messages! {
     CommonRemove = { en: "Remove", zh: "移除" },
     CommonEdit = { en: "Edit", zh: "编辑" },
     CommonSave = { en: "Save", zh: "保存" },
+    // Switch state inside a composed aria label.
+    CommonOn = { en: "on", zh: "开启" },
+    CommonOff = { en: "off", zh: "关闭" },
     // Shared by the shortcut recorder and the Appshots page.
     CommonPressEscapeToCancel = { en: "Press Escape to cancel.", zh: "按 Escape 键取消。" },
 
@@ -480,13 +488,68 @@ messages! {
         zh: "该会话所在设备运行的 zeron 版本过旧 — 请更新后搜索其文件"
     },
     ComposerFileMentionFailed = { en: "File search failed", zh: "文件搜索失败" },
-    ComposerSlashNoCommands = { en: "This agent has no slash commands", zh: "该智能体没有 slash 命令" },
     ComposerSlashNoMatches = { en: "No matching commands", zh: "没有匹配的命令" },
+    ComposerSlashNoMatchingSkills = { en: "No matching skills", zh: "没有匹配的技能" },
+    ComposerSlashNoMatchingSkillsOrCommands = {
+        en: "No matching commands or skills",
+        zh: "没有匹配的命令或技能"
+    },
+    ComposerSkillsNoneAvailable = {
+        en: "No skills available for this project",
+        zh: "该项目没有可用的技能"
+    },
+    ComposerSkillsNotAdvertised = {
+        en: "This agent does not advertise skills",
+        zh: "该智能体未声明支持技能"
+    },
+    ComposerSlashAndSkillsNoneAvailable = {
+        en: "No commands or skills available",
+        zh: "没有可用的命令或技能"
+    },
+    ComposerSlashNoneInIntegration = {
+        en: "No slash commands available in this integration",
+        zh: "此集成没有可用的 slash 命令"
+    },
     ComposerSlashOlderDevice = {
-        en: "The session's device runs an older zeron — update it to list commands",
-        zh: "该会话所在设备运行的 zeron 版本过旧 — 请更新后列出命令"
+        en: "Commands require an updated engine on the selected device. Restart that device’s Zeron after updating.",
+        zh: "命令需要所选设备上更新版本的引擎。更新后请重启该设备上的 Zeron。"
+    },
+    ComposerSlashSkillsOlderDevice = {
+        en: "Skills require an updated engine on the selected device. Restart that device’s Zeron after updating.",
+        zh: "技能需要所选设备上更新版本的引擎。更新后请重启该设备上的 Zeron。"
     },
     ComposerSlashFailed = { en: "Couldn't load this agent's commands", zh: "无法加载该智能体的命令" },
+    ComposerSlashSkillsFailed = {
+        en: "Couldn't load this agent's skills",
+        zh: "无法加载该智能体的技能"
+    },
+    ComposerSlashNeedsConnection = {
+        en: "Agent command discovery requires a connection",
+        zh: "发现智能体命令需要连接"
+    },
+    ComposerReferenceNeedsUpdate = {
+        en: "Update the selected device’s Zeron to send file, command, or skill references. Your draft is preserved.",
+        zh: "请先更新所选设备上的 Zeron，再发送文件、命令或技能引用。草稿已保留。"
+    },
+    // Workspace command descriptions in the slash popup.
+    ComposerWorkspaceModel = {
+        en: "Zeron: choose agent, model, and reasoning",
+        zh: "Zeron：选择智能体、模型与推理级别"
+    },
+    ComposerWorkspaceNew = { en: "Zeron: start a new conversation", zh: "Zeron：开始新会话" },
+    ComposerWorkspaceResume = {
+        en: "Zeron: search and open conversations",
+        zh: "Zeron：搜索并打开会话"
+    },
+    ComposerWorkspaceSettings = { en: "Zeron: open settings", zh: "Zeron：打开设置" },
+    ComposerWorkspaceDiff = { en: "Zeron: open changes", zh: "Zeron：打开改动" },
+    ComposerWorkspaceFiles = { en: "Zeron: open project files", zh: "Zeron：打开项目文件" },
+    ComposerWorkspaceTerminal = { en: "Zeron: open a terminal", zh: "Zeron：打开终端" },
+    ComposerWorkspaceRename = {
+        en: "Zeron: rename this conversation",
+        zh: "Zeron：重命名此会话"
+    },
+    ComposerWorkspaceStop = { en: "Zeron: stop the active run", zh: "Zeron：停止当前运行" },
     // Shared by the file-search and command popups.
     ComposerDeviceUnreachable = {
         en: "The session's device is unreachable",
@@ -984,6 +1047,10 @@ messages! {
     PickerNoProjectOptOut = { en: "Don't work in a project", zh: "不使用项目" },
     PickerNoProject = { en: "No project", zh: "无项目" },
     PickerNoProjectSelected = { en: "No project selected", zh: "未选择项目" },
+    PickerModelMissingFromList = {
+        en: "Selected in this chat; absent from the current model list",
+        zh: "已在此会话中选择，但不在当前模型列表中"
+    },
     PickerThisDevice = { en: "This device", zh: "本机" },
     PickerDeviceYou = { en: "You", zh: "你" },
     PickerNoRef = { en: "No ref", zh: "无分支" },
@@ -1197,11 +1264,9 @@ messages! {
     // the detail noun from `TranscriptDetailDiff` / `TranscriptDetailOutput`.
     TranscriptThoughtProcess = { en: "Thought process", zh: "思考过程" },
     TranscriptThoughtTimes = { en: "Thought {n} times", zh: "思考 {n} 次" },
-    TranscriptThoughtWithBase = { en: "Thought · {base}", zh: "思考 · {base}" },
-    TranscriptThoughtTimesWithBase = {
-        en: "Thought {n} times · {base}",
-        zh: "思考 {n} 次 · {base}"
-    },
+    TranscriptNoteWrote = { en: "Wrote", zh: "写下" },
+    TranscriptNoteWritten = { en: "wrote a note", zh: "写了一条笔记" },
+    TranscriptNoteWrittenTimes = { en: "wrote {n} notes", zh: "写了 {n} 条笔记" },
     TranscriptShowFull = { en: "Show full {what}", zh: "查看完整{what}" },
     TranscriptShowFullSized = { en: "Show full {what} ({size})", zh: "查看完整{what}（{size}）" },
     TranscriptLoadingFull = { en: "Loading full {what}…", zh: "正在加载完整{what}…" },
@@ -1746,6 +1811,41 @@ messages! {
         zh: "打开侧边栏列表中该位置的会话。"
     },
 
+    // Settings → Shortcuts: the composer completion block
+    // (settings/completion.rs). `$` and `/` name the completion triggers and
+    // stay as written.
+    CompletionTitle = { en: "Composer completion", zh: "输入框补全" },
+    CompletionResetAria = {
+        en: "Restore composer completion defaults",
+        zh: "恢复输入框补全默认设置"
+    },
+    CompletionSubtitle = {
+        en: "For active agents on this device. Completion preferences apply across your devices.",
+        zh: "用于此设备上已启用的智能体。补全偏好会在你的设备间生效。"
+    },
+    CompletionLoading = { en: "Loading active agents…", zh: "正在加载已启用的智能体…" },
+    CompletionConnectDevice = {
+        en: "Connect this device to load its active agents.",
+        zh: "连接此设备后才能加载其已启用的智能体。"
+    },
+    CompletionLoadFailed = { en: "Unable to load active agents.", zh: "无法加载已启用的智能体。" },
+    CompletionRetryAria = { en: "Retry loading active agents", zh: "重新加载已启用的智能体" },
+    CompletionNoAgents = {
+        en: "No active agents on this device. Enable an installed agent in Settings → Agents.",
+        zh: "此设备上没有已启用的智能体。请在「设置 → 智能体」中启用已安装的智能体。"
+    },
+    CompletionToggleAria = {
+        en: "{name}: {label}, {state}",
+        zh: "{name}：{label}，{state}"
+    },
+    CompletionUseDollar = { en: "Use $ for skills", zh: "使用 $ 调用技能" },
+    CompletionUseDollarHint = { en: "Type $ to find and insert a skill.", zh: "输入 $ 查找并插入技能。" },
+    CompletionSeparateCommands = { en: "Separate / commands", zh: "分离 / 命令" },
+    CompletionSeparateCommandsHint = {
+        en: "Keep skills out of the / command menu.",
+        zh: "让技能不出现在 / 命令菜单中。"
+    },
+
     // Settings → Appshots capability copy (crates/ui/src/appshots.rs): the
     // destination and status-badge labels plus the per-platform setup,
     // shortcut, capture, and text descriptions. `Appshot` is Zeron's name for
@@ -1876,16 +1976,12 @@ messages! {
         zh: "脚本化的测试 harness。"
     },
     HarnessesPendingStarting = { en: "Preparing Antigravity…", zh: "正在准备 Antigravity…" },
-    HarnessesPendingInstalling = { en: "Installing Antigravity…", zh: "正在安装 Antigravity…" },
     HarnessesPendingAuthenticating = {
         en: "Finish signing in in your browser.",
         zh: "请在浏览器中完成登录。"
     },
-    HarnessesPendingEnabling = { en: "Enabling Antigravity…", zh: "正在启用 Antigravity…" },
     HarnessesFailureStarting = { en: "Setup failed", zh: "设置失败" },
-    HarnessesFailureInstalling = { en: "Installation failed", zh: "安装失败" },
     HarnessesFailureAuthenticating = { en: "Sign-in failed", zh: "登录失败" },
-    HarnessesFailureEnabling = { en: "Enable failed", zh: "启用失败" },
     HarnessesSessionTitles = { en: "Session titles", zh: "会话标题" },
     HarnessesSessionTitlesSubtitle = {
         en: "Choose the agent and model for automatic titles on this device. Claude Code and Codex support restricted title generation.",
@@ -1909,7 +2005,6 @@ messages! {
     },
     HarnessesSignInStartFailed = { en: "Sign-in failed to start: {err}", zh: "登录启动失败：{err}" },
     HarnessesUnknownError = { en: "Unknown error", zh: "未知错误" },
-    HarnessesEngineUnavailable = { en: "Engine unavailable", zh: "引擎不可用" },
     HarnessesNotInstalledEnabled = {
         en: "{cli} CLI not installed — turn it off or install it",
         zh: "{cli} CLI 未安装 — 请将其关闭或安装它"
@@ -1918,9 +2013,29 @@ messages! {
         en: "Install the {cli} CLI to enable",
         zh: "安装 {cli} CLI 后才能启用"
     },
+    HarnessesAntigravityInstallToEnable = {
+        en: "Install Antigravity to enable",
+        zh: "安装 Antigravity 后才能启用"
+    },
+    HarnessesAntigravityExecutableToEnable = {
+        en: "Set ANTIGRAVITY_ACP_EXECUTABLE to enable Antigravity",
+        zh: "设置 ANTIGRAVITY_ACP_EXECUTABLE 后才能启用 Antigravity"
+    },
+    HarnessesInstallingAgent = { en: "Installing {name}…", zh: "正在安装 {name}…" },
+    HarnessesInstall = { en: "Install", zh: "安装" },
+    HarnessesSignIn = { en: "Sign in", zh: "登录" },
+    HarnessesCancelInstallFailed = {
+        en: "Cancellation failed — {error}",
+        zh: "取消失败 — {error}"
+    },
+    HarnessesInstallFailed = { en: "Installation failed — {error}", zh: "安装失败 — {error}" },
+    HarnessesManualInstall = {
+        en: "{hint}. Install with `{command}`",
+        zh: "{hint}。可用 `{command}` 安装"
+    },
     HarnessesSubtitle = {
-        en: "Choose which coding agents the composer offers. The setting is per device — switch devices in the header. Agents whose CLI isn't installed on a device can't be enabled there.",
-        zh: "选择输入框提供哪些编码智能体。该设置按设备生效 — 可在页首切换设备。CLI 未安装在某设备上的智能体无法在该设备启用。"
+        en: "Install coding agents and choose which ones the composer offers. Installations and settings apply to the selected device. Downloads start only when you choose Install.",
+        zh: "安装编码智能体，并选择输入框提供哪些。安装与设置作用于所选设备，且只有在你选择「安装」后才会开始下载。"
     },
 
     // Settings → Accounts (accounts.rs). {provider} takes a provider name,
@@ -2359,6 +2474,7 @@ messages! {
     TranscriptElapsedMinutes = { en: "{n}m {s}s", zh: "{n}分{s}秒" },
     TranscriptElapsedHours = { en: "{n}h {m}m", zh: "{n}小时{m}分钟" },
     TranscriptElapsedDays = { en: "{n}d {h}h", zh: "{n}天{h}小时" },
+    TranscriptWorkedFor = { en: "Worked for {elapsed}", zh: "耗时 {elapsed}" },
     CountToolOne = { en: "{n} tool", zh: "{n} 个工具" },
     CountToolMany = { en: "{n} tools", zh: "{n} 个工具" },
 

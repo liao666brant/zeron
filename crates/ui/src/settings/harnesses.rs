@@ -1,5 +1,4 @@
-//! Settings → Agents: enable/disable harnesses (the t3code models-page
-//! arrangement — one card row per agent with a trailing toggle).
+//! Settings → Agents: install and enable harnesses, one card row per agent.
 //!
 //! The state is PER-DEVICE and lives on the engine (`harness-prefs.json` in
 //! its data dir): CLI installs are per-device, so enablement is too. The
@@ -32,7 +31,7 @@ use zeron_proto::Model;
 use zeron_proto::{AgentLoginPoll, AgentLoginStart, AgentLoginStatus, HarnessId};
 use zeron_rpc::methods;
 
-use crate::i18n::{self, MessageId};
+use crate::i18n::{self, Locale, MessageId};
 use crate::pickers::visible_harnesses;
 use crate::popover::{self, Loadable};
 use crate::settings::widgets;
@@ -56,6 +55,60 @@ pub fn blurb_message(harness: HarnessId) -> MessageId {
     }
 }
 
+fn offers_sign_in(harness: HarnessId, installed: bool) -> bool {
+    harness == HarnessId::Antigravity && installed
+}
+
+fn offers_install(harness: HarnessId, installed: bool, can_install: bool) -> bool {
+    harness != HarnessId::Mock && !installed && can_install
+}
+
+fn install_hint(harness: HarnessId, enabled: bool, can_install: bool, locale: Locale) -> String {
+    if harness == HarnessId::Antigravity {
+        return i18n::translate(
+            if can_install {
+                MessageId::HarnessesAntigravityInstallToEnable
+            } else {
+                MessageId::HarnessesAntigravityExecutableToEnable
+            },
+            locale,
+        )
+        .to_string();
+    }
+    let hint = if enabled {
+        i18n::fill(
+            MessageId::HarnessesNotInstalledEnabled,
+            "{cli}",
+            cli_name(harness),
+            locale,
+        )
+    } else {
+        i18n::fill(
+            MessageId::HarnessesNotInstalledEnable,
+            "{cli}",
+            cli_name(harness),
+            locale,
+        )
+    };
+    if !can_install && let Some(command) = zeron_harness::install::manual_command(harness) {
+        i18n::fill_many(
+            MessageId::HarnessesManualInstall,
+            &[("{hint}", &hint), ("{command}", command)],
+            locale,
+        )
+    } else {
+        hint
+    }
+}
+
+fn install_label(name: &str, locale: Locale) -> String {
+    i18n::fill(MessageId::HarnessesInstallingAgent, "{name}", name, locale)
+}
+
+fn install_params(harness: HarnessId, target: &Option<String>) -> serde_json::Value {
+    serde_json::json!({"harness": harness, "targetDeviceId": target})
+}
+
 /// The CLI named in the not-installed hint.
 pub fn cli_name(harness: HarnessId) -> &'static str {
     match harness {
@@ -67,7 +120,7 @@ pub fn cli_name(harness: HarnessId) -> &'static str {
         HarnessId::Hermes => "hermes",
         HarnessId::Pi => "pi",
         HarnessId::Opencode => "opencode",
-        HarnessId::Antigravity => "agy",
+        HarnessId::Antigravity => "Antigravity",
         HarnessId::Mock => "mock",
     }
 }
@@ -94,6 +147,8 @@ pub struct HarnessesPage {
     error: Option<String>,
     load_task: Option<Task<()>>,
     toggle_task: Option<Task<()>>,
+    installing: Option<HarnessId>,
+    install_task: Option<Task<()>>,
     /// a sign-in that switches its harness on once it succeeds.
     sign_in: Option<SignIn>,
     sign_in_failure: Option<SignInFailure>,
@@ -111,9 +166,7 @@ struct SignIn {
 #[derive(Clone, Copy)]
 enum SignInPhase {
     Starting,
-    Installing,
     Authenticating,
-    Enabling,
 }
 
 struct SignInFailure {
@@ -126,26 +179,19 @@ impl SignInPhase {
     fn pending_message(self) -> MessageId {
         match self {
             Self::Starting => MessageId::HarnessesPendingStarting,
-            Self::Installing => MessageId::HarnessesPendingInstalling,
             Self::Authenticating => MessageId::HarnessesPendingAuthenticating,
-            Self::Enabling => MessageId::HarnessesPendingEnabling,
         }
     }
 
     fn failure_message(self) -> MessageId {
         match self {
             Self::Starting => MessageId::HarnessesFailureStarting,
-            Self::Installing => MessageId::HarnessesFailureInstalling,
             Self::Authenticating => MessageId::HarnessesFailureAuthenticating,
-            Self::Enabling => MessageId::HarnessesFailureEnabling,
         }
     }
 }
 
 /// harnesses whose toggle runs the agent's own sign-in before switching on.
-fn signs_in_on_enable(harness: HarnessId) -> bool {
-    harness == HarnessId::Antigravity
-}
 
 impl HarnessesPage {
     pub fn new(state: Entity<AppState>, cx: &mut Context<Self>) -> Self {
@@ -164,6 +210,8 @@ impl HarnessesPage {
             error: None,
             load_task: None,
             toggle_task: None,
+            installing: None,
+            install_task: None,
             sign_in: None,
             sign_in_failure: None,
             sign_in_task: None,
@@ -194,6 +242,8 @@ impl HarnessesPage {
         self.title_models = Loadable::Idle;
         self.title_menu = None;
         self.title_saving = false;
+        self.installing = None;
+        self.install_task = None;
         self.target_device = target;
         self.error = None;
         self.sign_in_failure = None;
@@ -473,14 +523,10 @@ impl HarnessesPage {
     /// fresh catalog, so the rows repaint from the authoritative state in one
     /// round trip; refusals (engine guards) land in the error strip.
     fn toggle(&mut self, harness: HarnessId, enabled: bool, cx: &mut Context<Self>) {
-        if enabled && signs_in_on_enable(harness) {
-            self.start_sign_in(harness, cx);
-        } else {
-            self.set_enabled(harness, enabled, cx);
-        }
+        self.set_enabled(harness, enabled, cx);
     }
 
-    /// sign in first, then switch on: StartAgentLogin, then PollAgentLogin
+    /// Explicit sign-in: StartAgentLogin, then PollAgentLogin
     /// until the engine reports the outcome, opening the sign-in page the
     /// first time a poll names it.
     fn start_sign_in(&mut self, harness: HarnessId, cx: &mut Context<Self>) {
@@ -537,7 +583,7 @@ impl HarnessesPage {
             this.update(cx, |page, _| {
                 if let Some(sign_in) = &mut page.sign_in {
                     sign_in.login_id = Some(login_id.clone());
-                    sign_in.phase = SignInPhase::Installing;
+                    sign_in.phase = SignInPhase::Starting;
                 }
             })
             .ok();
@@ -573,11 +619,8 @@ impl HarnessesPage {
                             }
                             AgentLoginStatus::Done => {
                                 page.sign_in_failure = None;
-                                if let Some(sign_in) = &mut page.sign_in {
-                                    sign_in.phase = SignInPhase::Enabling;
-                                    sign_in.message = None;
-                                }
-                                page.finish_sign_in(harness, cx);
+                                page.sign_in = None;
+                                crate::pickers::bump_harness_catalog(cx);
                                 true
                             }
                             AgentLoginStatus::Error => {
@@ -624,45 +667,6 @@ impl HarnessesPage {
         });
     }
 
-    fn finish_sign_in(&mut self, harness: HarnessId, cx: &mut Context<Self>) {
-        let Some(engine) = self.state.read(cx).engine().cloned() else {
-            self.fail_sign_in(
-                harness,
-                i18n::translate(MessageId::HarnessesEngineUnavailable, i18n::locale(cx))
-                    .to_string(),
-            );
-            return;
-        };
-        let params = self.with_target(serde_json::json!({
-            "harness": harness,
-            "enabled": true,
-        }));
-        self.toggle_task = Some(cx.spawn(async move |this, cx| {
-            let result = engine
-                .client()
-                .call(methods::SET_HARNESS_ENABLED, params)
-                .await
-                .map_err(|error| error.to_string())
-                .and_then(|value| {
-                    serde_json::from_value::<Vec<HarnessDescriptor>>(value)
-                        .map_err(|error| error.to_string())
-                });
-            this.update(cx, |page, cx| {
-                match result {
-                    Ok(list) => {
-                        page.harnesses = Loadable::Ready(list);
-                        page.sign_in = None;
-                        page.sign_in_failure = None;
-                        crate::pickers::bump_harness_catalog(cx);
-                    }
-                    Err(error) => page.fail_sign_in(harness, error),
-                }
-                cx.notify();
-            })
-            .ok();
-        }));
-    }
-
     fn cancel_sign_in(&mut self, cx: &mut Context<Self>) {
         let Some(sign_in) = self.sign_in.take() else {
             return;
@@ -685,6 +689,81 @@ impl HarnessesPage {
             })
             .detach();
         }
+        cx.notify();
+    }
+
+    fn cancel_install(&mut self, cx: &mut Context<Self>) {
+        let Some(harness) = self.installing else {
+            return;
+        };
+        let Some(engine) = self.state.read(cx).engine().cloned() else {
+            return;
+        };
+        let target = self.target_device.clone();
+        let params = install_params(harness, &target);
+        cx.spawn(async move |this, cx| {
+            if let Err(error) = engine.client().call(methods::CANCEL_INSTALL, params).await {
+                this.update(cx, |page, cx| {
+                    if page.target_device == target && page.installing == Some(harness) {
+                        page.error = Some(i18n::fill(
+                            MessageId::HarnessesCancelInstallFailed,
+                            "{error}",
+                            &error.to_string(),
+                            i18n::locale(cx),
+                        ));
+                        cx.notify();
+                    }
+                })
+                .ok();
+            }
+        })
+        .detach();
+    }
+
+    fn install(&mut self, harness: HarnessId, cx: &mut Context<Self>) {
+        let Some(engine) = self.state.read(cx).engine().cloned() else {
+            return;
+        };
+        if self.installing.is_some() {
+            return;
+        }
+        let params = install_params(harness, &self.target_device);
+        let target = self.target_device.clone();
+        self.installing = Some(harness);
+        self.error = None;
+        self.install_task = Some(cx.spawn(async move |this, cx| {
+            let result = engine
+                .client()
+                .call(methods::INSTALL_HARNESS, params)
+                .await
+                .map_err(|error| error.to_string())
+                .and_then(|value| {
+                    serde_json::from_value::<Vec<HarnessDescriptor>>(value)
+                        .map_err(|error| error.to_string())
+                });
+            this.update(cx, |page, cx| {
+                if page.target_device != target {
+                    return;
+                }
+                page.installing = None;
+                match result {
+                    Ok(list) => {
+                        page.harnesses = Loadable::Ready(list);
+                        crate::pickers::bump_harness_catalog(cx);
+                    }
+                    Err(error) => {
+                        page.error = Some(i18n::fill(
+                            MessageId::HarnessesInstallFailed,
+                            "{error}",
+                            &error,
+                            i18n::locale(cx),
+                        ))
+                    }
+                }
+                cx.notify();
+            })
+            .ok();
+        }));
         cx.notify();
     }
 
@@ -916,15 +995,11 @@ impl HarnessesPage {
                     .sign_in_failure
                     .as_ref()
                     .filter(|failure| failure.harness == harness);
-                let sign_in_cancellable = signing_in
-                    .is_some_and(|sign_in| !matches!(sign_in.phase, SignInPhase::Enabling));
+                let sign_in_cancellable = signing_in.is_some();
                 // Turning OFF never needs the CLI (a default-on agent the
                 // user doesn't want must not be stuck on because it isn't
                 // installed); turning ON still does.
-                let interactive = signing_in.is_none()
-                    && sign_in_failure.is_none()
-                    && !last_enabled
-                    && (enabled || installed);
+                let interactive = signing_in.is_none() && !last_enabled && (enabled || installed);
                 let (icon_path, tint) = crate::pickers::harness_brand_icon(harness);
                 let mut meta: Vec<gpui::AnyElement> = vec![
                     div()
@@ -969,25 +1044,33 @@ impl HarnessesPage {
                             .into_any_element(),
                     );
                 }
+                if self.installing == Some(harness) {
+                    meta.push(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(6.0))
+                            .child(crate::loaders::mini_mono_spinner(
+                                format!("harness-install-spinner-{harness:?}"),
+                                1.5,
+                                theme.text_muted,
+                                cx.entity_id(),
+                                cx,
+                            ))
+                            .child(SharedString::from(install_label(&descriptor.name, locale)))
+                            .into_any_element(),
+                    );
+                }
                 if !installed {
                     meta.push(
                         div()
                             .text_color(theme.warning_muted.opacity(0.9))
-                            .child(SharedString::from(if enabled {
-                                i18n::fill(
-                                    MessageId::HarnessesNotInstalledEnabled,
-                                    "{cli}",
-                                    cli_name(harness),
-                                    locale,
-                                )
-                            } else {
-                                i18n::fill(
-                                    MessageId::HarnessesNotInstalledEnable,
-                                    "{cli}",
-                                    cli_name(harness),
-                                    locale,
-                                )
-                            }))
+                            .child(SharedString::from(install_hint(
+                                harness,
+                                enabled,
+                                descriptor.can_install,
+                                locale,
+                            )))
                             .into_any_element(),
                     );
                 }
@@ -1021,6 +1104,52 @@ impl HarnessesPage {
                             .flex_col()
                             .child(widgets::row_title(&theme, descriptor.name.clone()))
                             .child(widgets::meta_line(&theme, meta)),
+                    )
+                    .when(
+                        offers_install(harness, installed, descriptor.can_install)
+                            && self.installing != Some(harness),
+                        |el| {
+                            el.child(
+                                widgets::ghost_action(&theme)
+                                    .id(("harness-install", ix))
+                                    .when(self.installing.is_none(), |el| {
+                                        el.hover(|s| widgets::ghost_hover(&theme, s)).on_click(
+                                            cx.listener(move |this, _, _, cx| {
+                                                this.install(harness, cx)
+                                            }),
+                                        )
+                                    })
+                                    .child(i18n::translate(MessageId::HarnessesInstall, locale)),
+                            )
+                        },
+                    )
+                    .when(self.installing == Some(harness), |el| {
+                        el.child(
+                            widgets::ghost_action(&theme)
+                                .id(("harness-cancel-install", ix))
+                                .hover(|s| widgets::ghost_hover(&theme, s))
+                                .on_click(cx.listener(|this, _, _, cx| this.cancel_install(cx)))
+                                .child(i18n::translate(MessageId::CommonCancel, locale)),
+                        )
+                    })
+                    .when(
+                        offers_sign_in(harness, installed)
+                            && signing_in.is_none()
+                            && sign_in_failure.is_none(),
+                        |el| {
+                            el.child(
+                                widgets::ghost_action(&theme)
+                                    .id(("harness-sign-in", ix))
+                                    .hover(|s| widgets::ghost_hover(&theme, s))
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.start_sign_in(harness, cx)
+                                    }))
+                                    .child(SharedString::from(i18n::translate(
+                                        MessageId::HarnessesSignIn,
+                                        locale,
+                                    ))),
+                            )
+                        },
                     )
                     .when(sign_in_cancellable, |el| {
                         el.child(
@@ -1184,6 +1313,14 @@ mod tests {
     use crate::i18n::MessageId;
 
     #[test]
+    fn explicit_sign_in_requires_installed_antigravity() {
+        use zeron_proto::HarnessId;
+        assert!(super::offers_sign_in(HarnessId::Antigravity, true));
+        assert!(!super::offers_sign_in(HarnessId::Antigravity, false));
+        assert!(!super::offers_sign_in(HarnessId::Codex, true));
+    }
+
+    #[test]
     fn antigravity_setup_copy_matches_each_phase() {
         assert_eq!(
             SignInPhase::Starting.pending_message(),
@@ -1194,14 +1331,6 @@ mod tests {
             MessageId::HarnessesFailureStarting
         );
         assert_eq!(
-            SignInPhase::Installing.pending_message(),
-            MessageId::HarnessesPendingInstalling
-        );
-        assert_eq!(
-            SignInPhase::Installing.failure_message(),
-            MessageId::HarnessesFailureInstalling
-        );
-        assert_eq!(
             SignInPhase::Authenticating.pending_message(),
             MessageId::HarnessesPendingAuthenticating
         );
@@ -1209,13 +1338,70 @@ mod tests {
             SignInPhase::Authenticating.failure_message(),
             MessageId::HarnessesFailureAuthenticating
         );
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn install_visibility_and_hint_follow_target_capabilities() {
+    for id in [
+        HarnessId::Antigravity,
+        HarnessId::Codex,
+        HarnessId::Opencode,
+        HarnessId::ClaudeCode,
+        HarnessId::Cursor,
+        HarnessId::Pi,
+        HarnessId::Grok,
+        HarnessId::Hermes,
+        HarnessId::Devin,
+        HarnessId::Mock,
+    ] {
+        for installed in [false, true] {
+            for available in [false, true] {
+                assert_eq!(
+                    offers_install(id, installed, available),
+                    id != HarnessId::Mock && !installed && available
+                );
+                assert_eq!(
+                    offers_sign_in(id, installed),
+                    id == HarnessId::Antigravity && installed
+                );
+            }
+        }
+    }
+    assert_eq!(cli_name(HarnessId::Antigravity), "Antigravity");
+    assert_eq!(
+        install_hint(HarnessId::Antigravity, false, true, Locale::En),
+        "Install Antigravity to enable"
+    );
+    assert!(
+        install_hint(HarnessId::Antigravity, false, false, Locale::En)
+            .contains("ANTIGRAVITY_ACP_EXECUTABLE")
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn install_phase_copy_and_cancel_target_match_install() {
+    assert_eq!(
+        install_label("Claude Code", Locale::En),
+        "Installing Claude Code…"
+    );
+    assert_eq!(install_label("Pi", Locale::En), "Installing Pi…");
+    for target in [None, Some("remote-device".to_string())] {
+        let params = install_params(HarnessId::Pi, &target);
+        assert_eq!(params["harness"], "pi");
         assert_eq!(
-            SignInPhase::Enabling.pending_message(),
-            MessageId::HarnessesPendingEnabling
-        );
-        assert_eq!(
-            SignInPhase::Enabling.failure_message(),
-            MessageId::HarnessesFailureEnabling
+            params["targetDeviceId"],
+            serde_json::to_value(&target).unwrap()
         );
     }
+    assert_eq!(
+        install_hint(HarnessId::Codex, false, false, Locale::En),
+        "Install the codex CLI to enable. Install with `npm install -g @openai/codex`"
+    );
+    assert!(
+        install_hint(HarnessId::Codex, true, false, Locale::En)
+            .starts_with("codex CLI not installed — turn it off or install it.")
+    );
 }
